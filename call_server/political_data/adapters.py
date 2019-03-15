@@ -1,5 +1,6 @@
 # translate country specific data to campaign model field names
 
+from collections import defaultdict
 
 def adapt_by_key(key):
     if key.startswith("us:bioguide"):
@@ -109,7 +110,53 @@ class UnitedStatesData(DataAdapter):
 
 class OpenStatesData(DataAdapter):
     def target(self, data):
+        if data.get('leg_id'):
+            return self.target_legacy(data)
 
+        adapted = {
+            'uid': data.get('id')
+        }
+        if 'chamber' in data:
+            if type(data['chamber']) == dict:
+                chamber = data['chamber'][0]['organization']['classification']
+                district = data['chamber'][0]['post']['label']
+            elif type(data['chamber']) == str:
+                chamber = data['chamber']
+                district = data.get('district', '')
+            else:
+                chamber = None
+                district = None
+
+        if 'title' in data:
+            adapted['title'] = data['title']
+        elif chamber == "upper":
+            adapted['title'] = 'Senator'
+        else:
+            adapted['title'] = 'Representative'
+
+        adapted['district'] = district
+
+        if data.get('name'):
+            adapted['name'] = data['name']
+        elif 'givenName' in data and 'familyName' in data:
+            adapted['name'] = u'{givenName} {familyName}'.format(**data)
+
+        # filter contact details for voice type
+        if 'contactDetails' in data:
+            office_phones = [d for d in data['contactDetails'] if d['type'] == 'voice']
+            # default to capitol office
+            for office in office_phones:
+                if office.get('note') == 'Capitol Office':
+                    adapted['number'] = office.get('value', '')
+            # if none, try first
+            if not 'number' in adapted:
+                adapted['number'] = office_phones[0].get('value', '')
+                # fallback to none
+
+        return adapted
+
+    def target_legacy(self, data):
+        """ adapter for OpenStates v1 API data"""
         adapted = {
             'uid': data.get('leg_id', '')
         }
@@ -149,6 +196,33 @@ class OpenStatesData(DataAdapter):
         return adapted
 
     def offices(self, data):
+        if data.get('leg_id'):
+            return self.offices_legacy(data)
+
+        # merge contactDetails list of dicts by note
+        # so we can iterate more cleanly
+        offices_dict = defaultdict(dict)
+        for c in data.get('contactDetails', []):
+            offices_dict[c['note']][c['type']] = c['value']
+            offices_dict[c['note']]['name'] = c['note']
+
+        office_list = []
+        for office in offices_dict.values():
+            office_name = office.get('name', '')
+            office_name = office_name.replace('Office', '').replace('office', '')
+            if '#' in office_name:
+                office_name = office_name.split('#')[0]
+
+            office_list.append({
+                'name': office_name,
+                'address': office.get('address', ''),
+                'number': office.get('voice', ''),
+                'type': office.get('name', '')
+            })
+        return office_list
+
+    def offices_legacy(self, data):
+        """ adapter for OpenStates v1 API data"""
         office_list = []
         for office in data.get('offices', []):
             if office.get('type') == 'capitol':

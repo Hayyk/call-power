@@ -45,12 +45,10 @@ class TestUSStateData(BaseTestCase):
         house_rep = self.us_data.get_uid(uids[0])
         self.assertEqual(house_rep['chamber'], 'lower')
         self.assertEqual(house_rep['state'].upper(), 'CA')
-        self.assertEqual(house_rep['active'], True)
 
         senator = self.us_data.get_uid(uids[1])
         self.assertEqual(senator['chamber'], 'upper')
         self.assertEqual(senator['state'].upper(), 'CA')
-        self.assertEqual(senator['active'], True)
 
     def test_locate_targets_lower_only(self):
         self.STATE_CAMPAIGN.campaign_subtype = 'lower'
@@ -60,8 +58,6 @@ class TestUSStateData(BaseTestCase):
         house_rep = self.us_data.get_uid(uids[0])
         self.assertEqual(house_rep['chamber'], 'lower')
         self.assertEqual(house_rep['state'].upper(), 'CA')
-        self.assertEqual(house_rep['active'], True)
-
     def test_locate_targets_upper_only(self):
         self.STATE_CAMPAIGN.campaign_subtype = 'upper'
         uids = locate_targets(self.mock_location, self.STATE_CAMPAIGN, cache=self.mock_cache)
@@ -70,7 +66,6 @@ class TestUSStateData(BaseTestCase):
         senator = self.us_data.get_uid(uids[0])
         self.assertEqual(senator['chamber'], 'upper')
         self.assertEqual(senator['state'].upper(), 'CA')
-        self.assertEqual(senator['active'], True)
 
     def test_locate_targets_ordered_lower_first(self):
         self.STATE_CAMPAIGN.campaign_subtype = 'both'

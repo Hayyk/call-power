@@ -1,7 +1,5 @@
 import os
 import twilio.rest
-import pyopenstates
-
 
 class DefaultConfig(object):
     PROJECT = 'CallPower'
@@ -56,7 +54,6 @@ class DefaultConfig(object):
     OPENSTATES_API_KEY = os.environ.get('OPENSTATES_API_KEY')
     if not OPENSTATES_API_KEY:
         OPENSTATES_API_KEY = os.environ.get('OPENSTATES_API_KEY')
-    pyopenstates.set_api_key(OPENSTATES_API_KEY)
 
     LOG_PHONE_NUMBERS = True
 

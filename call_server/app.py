@@ -5,7 +5,7 @@ import urlparse
 
 from flask import Flask, g, request, session, render_template
 from flask_assets import Bundle
-
+import sqlalchemy
 
 from utils import json_markup, OrderedDictYAMLLoader
 import yaml
@@ -149,9 +149,13 @@ def init_extensions(app):
     if app.config.get('TESTING', False):
         app.ADMIN_PHONES_LIST = []
     else:
-        app.ADMIN_PHONES_LIST = filter(bool, 
-            [str(u.phone.national_number) if u.phone else None for u in User.query.all()]
-        )
+        try:
+            app.ADMIN_PHONES_LIST = filter(bool, 
+                [str(u.phone.national_number) if u.phone else None for u in User.query.all()]
+            )
+        except sqlalchemy.exc.SQLAlchemyError:
+            # this may throw an error when creating the database from scratch
+            pass
 
     if app.config.get('DEBUG'):
         from flask_debugtoolbar import DebugToolbarExtension

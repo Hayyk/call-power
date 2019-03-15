@@ -1,16 +1,19 @@
 import werkzeug.contrib.cache
 from flask_babel import gettext as _
-import pyopenstates
+from graphqlclient import GraphQLClient
 
 from . import DataProvider, CampaignType
 
 from ..geocode import Geocoder, LocationError
 from ..constants import US_STATES
 from ...campaign.constants import (LOCATION_POSTAL, LOCATION_ADDRESS, LOCATION_LATLON)
+from ...utils import ocd_field
 
+import os
 import random
 import csv
 import yaml
+import json
 import collections
 from datetime import datetime
 import logging
@@ -212,9 +215,8 @@ class USCampaignType_State(USCampaignType):
 
     def _filter_legislators(self, legislators, campaign_region=None):
         for legislator in legislators:
-            is_active = legislator['active']
             in_state = campaign_region is None or legislator['state'].upper() == campaign_region.upper()
-            if is_active and in_state:
+            if in_state:
                 yield legislator
 
 
@@ -243,6 +245,8 @@ class USDataProvider(DataProvider):
         super(USDataProvider, self).__init__(**kwargs)
         self._cache = cache
         self._geocoder = Geocoder(country='US')
+        self._openstates = GraphQLClient('https://openstates.org/graphql')
+        self._openstates.inject_token(os.environ.get('OPENSTATES_API_KEY'), 'x-api-key')
 
     def get_location(self, locate_by, raw, ignore_local_cache=False):
         if locate_by == LOCATION_POSTAL:
@@ -452,13 +456,59 @@ class USDataProvider(DataProvider):
         if not (location.latitude and location.longitude):
             raise LocationError('USDataProvider.get_state_legislators requires location with lat/lon')    
 
-        legislators = pyopenstates.locate_legislators(location.latitude, location.longitude)
+        # execute GraphQL query to get id, name, chamber, and contactDetails
+        api_response = self._openstates.execute('''
+            { people(latitude: %f, longitude: %f, first: 100) {
+                edges {
+                  node {
+                    id
+                    name
+                    givenName
+                    familyName
+                    chamber: currentMemberships(classification:["upper", "lower"]) {
+                      post {
+                        label
+                        role
+                        division {
+                          id
+                        }
+                      }
+                      organization {
+                        name
+                        classification
+                      }
+                    }
+                    contactDetails {
+                        value
+                        note
+                        type
+                    }
+                  }
+                }
+              }
+            }''' % (location.latitude, location.longitude))
+        parsed_response = json.loads(api_response)
 
+        legislators = []
         # save results individually in local cache
-        for leg in legislators:
-            key = self.KEY_OPENSTATES.format(id=leg['leg_id'])
+        for edge in parsed_response['data']['people']['edges']:
+            leg = edge['node']
+
+            chamber_classification = leg['chamber'][0]['organization']['classification']
+            district_label = leg['chamber'][0]['post']['label']
+            post_division = leg['chamber'][0]['post']['division']['id']
+            post_state = ocd_field(post_division, 'state').upper()
+            role_title = leg['chamber'][0]['post']['role']
+
+            leg['chamber'] = chamber_classification
+            leg['state'] = post_state
+            leg['district'] = district_label
+            leg['title'] = role_title
+
+            key = self.KEY_OPENSTATES.format(id=leg['id'])
             leg['cache_key'] = key
             self.cache_set(key, leg)
+            legislators.append(leg)
 
         return legislators
 
@@ -467,14 +517,53 @@ class USDataProvider(DataProvider):
         key = self.KEY_BIOGUIDE.format(bioguide_id=bioguide)
         return self.cache_get(key, list({}))
 
-    def get_state_legid(self, legid):
+    def get_state_legid(self, ocd_id):
         # try first to get from cache
-        key = self.KEY_OPENSTATES.format(id=legid)
+        key = self.KEY_OPENSTATES.format(id=ocd_id)
         leg = self.cache_get(key, None)
         
         if not leg:
             # or lookup from openstates and save
-            leg = pyopenstates.get_legislator(legid)
+            api_response = self._openstates.execute('''{
+                person(id:"%s") {
+                  id
+                  name
+                  givenName
+                  familyName
+                  chamber: currentMemberships(classification:["upper", "lower"]) {
+                      post {
+                        label
+                        role
+                        division {
+                          id
+                        }
+                      }
+                      organization {
+                        name
+                        classification
+                      }
+                  }
+                  contactDetails {
+                    value
+                    note
+                    type
+                  }
+                }
+                }''' % ocd_id)
+            parsed_response = json.loads(api_response)
+            leg = parsed_response['data']['person']
+
+            chamber_classification = leg['chamber'][0]['organization']['classification']
+            district_label = leg['chamber'][0]['post']['label']
+            post_division = leg['chamber'][0]['post']['division']['id']
+            post_state = ocd_field(post_division, 'state').upper()
+            role_title = leg['chamber'][0]['post']['role']
+
+            leg['chamber'] = chamber_classification
+            leg['state'] = post_state
+            leg['district'] = district_label
+            leg['title'] = role_title
+
             leg['cache_key'] = key
             self.cache_set(key, leg)
         return leg

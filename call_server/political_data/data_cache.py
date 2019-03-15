@@ -1,7 +1,7 @@
 from flask import current_app
 from ..extensions import cache
 from ..political_data.adapters import adapt_by_key
-import pyopenstates
+from countries.us import USDataProvider
 
 def check_political_data_cache(key, cache=cache):
     adapter = adapt_by_key(key)
@@ -13,7 +13,7 @@ def check_political_data_cache(key, cache=cache):
         # but may be available over external APIs
         if adapted_key.startswith("us_state:openstates"):
             leg_id = key.split(':')[-1]
-            leg = pyopenstates.get_legislator(leg_id)
+            leg = USDataProvider(cache).get_state_legid(leg_id)
             leg['cache_key'] = key
             cache.set(key, leg)
             cached_obj = leg

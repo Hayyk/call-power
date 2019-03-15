@@ -107,6 +107,17 @@ def ignore_accents(string):
     return unicodedata.normalize('NFD', string).encode('ascii', 'ignore')
 
 
+def ocd_field(ocd_data, field):
+    """ Takes an OpenCivicData string, splits it by / and looks for a labeled field"""
+    parts = ocd_data.split('/')
+    for p in parts:
+        if ":" in p:
+            label,value = p.split(':')
+            if label == field:
+                return value
+    return ''
+
+
 class OrderedDictYAMLLoader(yaml.Loader):
     """
     A YAML loader that loads mappings into ordered dictionaries.
